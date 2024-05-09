@@ -185,18 +185,20 @@ module.exports = class Block {
    *
    * @returns {Boolean} - True if the transaction was added successfully.
    */
-  addTransaction(tx, client) {
+  addTransaction(tx, client, maxSizeBytes) {
+    
     if (this.transactions.find(t => t.id === tx.id)) {
       if (client) client.log(`Duplicate transaction ${tx.id}.`);
       return false;
-  }
+      
+    }
 
-  const newTransactions = [...this.merkleTree.transactions, JSON.stringify(transaction)];
-  this.merkleTree = new MerkleTree(newTransactions);
+    const newTransactions = [...this.merkleTree.transactions, JSON.stringify(transaction)];
+    this.merkleTree = new MerkleTree(newTransactions);
 
 
-  const leaves = this.transactions.map(tx => utils.hash(JSON.stringify(tx))); // Use utils.hash to hash the transactions
-  this.merkleTree = new MerkleTree(leaves, utils.hash, { sortPairs: true }); 
+    const leaves = this.transactions.map(tx => utils.hash(JSON.stringify(tx))); // Use utils.hash to hash the transactions
+    this.merkleTree = new MerkleTree(leaves, utils.hash, { sortPairs: true }); 
 
 
 
@@ -242,6 +244,26 @@ module.exports = class Block {
     });
 
     return true;
+
+    /*
+
+    const serializedTx = JSON.stringify(tx);
+    const txSizeBytes = Buffer.byteLength(serializedTx, 'utf8');
+
+    // Check if adding this transaction would exceed the block size limit
+    if (this.getBlockSizeBytes() + txSizeBytes > maxSizeBytes) {
+      if (client) client.log(`Transaction ${tx.id} exceeds block size limit.`);
+      return false;
+    }
+
+    // Add transaction to block
+    this.transactions.push(tx);
+    this.merkleTree = new MerkleTree([...this.merkleTree.getLeaves(), serializedTx]);
+
+    ...
+
+    return true;
+    */
   }
 
   /**
@@ -314,5 +336,18 @@ module.exports = class Block {
    */
   contains(tx) {
     return this.transactions.has(tx.id);
+  }
+
+  getBlockSizeBytes() {
+    const serializedTransactions = this.transactions.map(tx => JSON.stringify(tx));
+    const serializedBlock = JSON.stringify({
+      prevBlockHash: this.prevBlockHash,
+      timestamp: this.timestamp,
+      transactions: serializedTransactions,
+      rewardAddr: this.rewardAddr,
+      coinbaseReward: this.coinbaseReward
+    });
+
+    return Buffer.byteLength(serializedBlock, 'utf8');
   }
 };

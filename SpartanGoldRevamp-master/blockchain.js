@@ -1,6 +1,6 @@
 "use strict";
 
-const { MerkleTree } = require('merkletree.js');
+const { MerkleTree } = require('./MerkleTree.js');
 const SHA256 = require('crypto-js/sha256'); 
 
 // Network message constants
@@ -198,7 +198,8 @@ module.exports = class Blockchain {
     // Check the validity, add the block, etc.
     this.chain.push(newBlock);
     this.adjustDifficulty(); // Adjust difficulty
-}
+  }
+
   /**
    * Constructor for the Blockchain configuration.  This constructor should not
    * be called outside of the class; nor should it be called more than once.
