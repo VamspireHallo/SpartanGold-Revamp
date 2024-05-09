@@ -190,6 +190,18 @@ module.exports = class Block {
    */
   addTransaction(tx, client, maxSizeBytes) {
     
+    /*
+    const serializedTx = JSON.stringify(tx);
+    const txSizeBytes = Buffer.byteLength(serializedTx, 'utf8');
+
+    // Check if adding this transaction would exceed the block size limit
+    if (this.getBlockSizeBytes() + txSizeBytes > maxSizeBytes) {
+      if (client) client.log(`Transaction ${tx.id} exceeds block size limit.`);
+      return false;
+    }
+    */
+
+    // Add transaction to block
     const serializedTx = JSON.stringify(tx);
     const txSizeBytes = Buffer.byteLength(serializedTx, 'utf8');
 
@@ -201,21 +213,7 @@ module.exports = class Block {
 
     // Add transaction to block
     this.transactions.push(tx);
-    this.merkleTree = new MerkleTree([...this.merkleTree.getLeaves(), serializedTx]);
-
-
-    if (this.transactions.find(t => t.id === tx.id)) {
-      if (client) client.log(`Duplicate transaction ${tx.id}.`);
-      return false;
-      
-    }
-
-    const newTransactions = [...this.merkleTree.transactions, JSON.stringify(transaction)];
-    this.merkleTree = new MerkleTree(newTransactions);
-
-
-    const leaves = this.transactions.map(tx => utils.hash(JSON.stringify(tx))); // Use utils.hash to hash the transactions
-    this.merkleTree = new MerkleTree(leaves, utils.hash, { sortPairs: true }); 
+    this.merkleTree = new MerkleTree(this.transactions.map(tx => utils.hash(JSON.stringify(tx))));
 
 
 
@@ -335,12 +333,17 @@ module.exports = class Block {
     return this.transactions.has(tx.id);
   }
 
+  /**
+   * Calculate the current size of the block in bytes.
+   * This includes the serialized size of all transactions.
+   * 
+   * @returns {number} - Size of the block in bytes.
+   */
   getBlockSizeBytes() {
-    const serializedTransactions = this.transactions.map(tx => JSON.stringify(tx));
     const serializedBlock = JSON.stringify({
       prevBlockHash: this.prevBlockHash,
       timestamp: this.timestamp,
-      transactions: serializedTransactions,
+      transactions: this.transactions.map(tx => JSON.stringify(tx)),
       rewardAddr: this.rewardAddr,
       coinbaseReward: this.coinbaseReward
     });
