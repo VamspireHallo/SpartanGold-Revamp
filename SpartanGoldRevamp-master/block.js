@@ -24,6 +24,8 @@ module.exports = class Block {
 
     this.merkleTree = new MerkleTree(transactions.map(tx => JSON.stringify(tx))); 
 
+    // Added array to keep track of transactions
+    this.transactions = [];
     
     if (prevBlock && prevBlock.rewardAddr) {
       // Add the previous block's rewards to the miner who found the proof.
@@ -182,11 +184,26 @@ module.exports = class Block {
    *
    * @param {Transaction} tx - The transaction to add to the block.
    * @param {Client} [client] - A client object, for logging useful messages.
+   * @param {number} maxSizeBytes - Maximum allowed block size in bytes.
    *
    * @returns {Boolean} - True if the transaction was added successfully.
    */
   addTransaction(tx, client, maxSizeBytes) {
     
+    const serializedTx = JSON.stringify(tx);
+    const txSizeBytes = Buffer.byteLength(serializedTx, 'utf8');
+
+    // Check if adding this transaction would exceed the block size limit
+    if (this.getBlockSizeBytes() + txSizeBytes > maxSizeBytes) {
+      if (client) client.log(`Transaction ${tx.id} exceeds block size limit.`);
+      return false;
+    }
+
+    // Add transaction to block
+    this.transactions.push(tx);
+    this.merkleTree = new MerkleTree([...this.merkleTree.getLeaves(), serializedTx]);
+
+
     if (this.transactions.find(t => t.id === tx.id)) {
       if (client) client.log(`Duplicate transaction ${tx.id}.`);
       return false;
@@ -244,26 +261,6 @@ module.exports = class Block {
     });
 
     return true;
-
-    /*
-
-    const serializedTx = JSON.stringify(tx);
-    const txSizeBytes = Buffer.byteLength(serializedTx, 'utf8');
-
-    // Check if adding this transaction would exceed the block size limit
-    if (this.getBlockSizeBytes() + txSizeBytes > maxSizeBytes) {
-      if (client) client.log(`Transaction ${tx.id} exceeds block size limit.`);
-      return false;
-    }
-
-    // Add transaction to block
-    this.transactions.push(tx);
-    this.merkleTree = new MerkleTree([...this.merkleTree.getLeaves(), serializedTx]);
-
-    ...
-
-    return true;
-    */
   }
 
   /**
