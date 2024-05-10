@@ -33,6 +33,10 @@ class MerkleTree {
         }
     }
 
+    getTransactions() {
+        return this.transactions;  // assuming this.transactions is an array of transaction objects
+    }
+
     constructor(transactions) {
         // Actual transactions
         this.transactions = [];
@@ -42,6 +46,11 @@ class MerkleTree {
 
         // hash-to-index Lookup table
         this.lookup = {};
+
+        if (transactions.length === 0) {
+            this.rootHash = ""; // Or some other default value indicating an empty tree
+            return; // Exit the constructor early
+        }
 
         // We want to maintain a balanced tree, so we may need to pad
         // out the last few elements.
