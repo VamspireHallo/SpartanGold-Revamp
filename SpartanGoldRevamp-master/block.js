@@ -3,30 +3,33 @@
 const Blockchain = require('./blockchain.js');
 
 const utils = require('./utils.js');
-const { MerkleTree } = require('merkletreejs');
-const SHA256 = require('crypto-js/sha256');
+
 /**
  * A block is a collection of transactions, with a hash connecting it
  * to a previous block.
  */
 module.exports = class Block {
 
- 
-  constructor(rewardAddr, prevBlock, target, coinbaseReward, transactions = []) {
+  /**
+   * Creates a new Block.  Note that the previous block will not be stored;
+   * instead, its hash value will be maintained in this block.
+   *
+   * @constructor
+   * @param {String} rewardAddr - The address to receive all mining rewards for this block.
+   * @param {Block} [prevBlock] - The previous block in the blockchain.
+   * @param {Number} [target] - The POW target.  The miner must find a proof that
+   *      produces a smaller value when hashed.
+   * @param {Number} [coinbaseReward] - The gold that a miner earns for finding a block proof.
+   */
+  constructor(rewardAddr, prevBlock, target=Blockchain.POW_TARGET, coinbaseReward=Blockchain.COINBASE_AMT_ALLOWED) {
     this.prevBlockHash = prevBlock ? prevBlock.hashVal() : null;
     this.target = target;
-    this.rewardAddr = rewardAddr;
-    this.coinbaseReward = coinbaseReward;
-    this.chainLength = prevBlock ? prevBlock.chainLength + 1 : 0;
-    this.timestamp = Date.now();
-    this.balances = new Map(prevBlock ? prevBlock.balances : []);
-    this.nextNonce = new Map(prevBlock ? prevBlock.nextNonce : []);
 
-    this.merkleTree = new MerkleTree(transactions.map(tx => JSON.stringify(tx))); 
+    // Get the balances and nonces from the previous block, if available.
+    // Note that balances and nonces are NOT part of the serialized format.
+    this.balances = prevBlock ? new Map(prevBlock.balances) : new Map();
+    this.nextNonce = prevBlock ? new Map(prevBlock.nextNonce) : new Map();
 
-    // Added array to keep track of transactions
-    this.transactions = [];
-    
     if (prevBlock && prevBlock.rewardAddr) {
       // Add the previous block's rewards to the miner who found the proof.
       let winnerBalance = this.balanceOf(prevBlock.rewardAddr) || 0;
@@ -34,7 +37,7 @@ module.exports = class Block {
     }
 
     // Storing transactions in a Map to preserve key order.
-  //  this.transactions = new Map();
+    this.transactions = new Map();
 
     // Adding toJSON methods for transactions and balances, which help with
     // serialization.
@@ -50,16 +53,39 @@ module.exports = class Block {
     // Note that this is a little simplistic -- an attacker
     // could make a long, but low-work chain.  However, this works
     // well enough for us.
- //   this.chainLength = prevBlock ? prevBlock.chainLength+1 : 0;
+    this.chainLength = prevBlock ? prevBlock.chainLength+1 : 0;
 
-  //  this.timestamp = Date.now();
+    this.timestamp = Date.now();
 
     // The address that will gain both the coinbase reward and transaction fees,
     // assuming that the block is accepted by the network.
-  //  this.rewardAddr = rewardAddr;
+    this.rewardAddr = rewardAddr;
 
-   // this.coinbaseReward = coinbaseReward;
+    this.coinbaseReward = coinbaseReward;
+
+    //Initializing the current block size
+    this.currentBlockSize = 0;
+
   }
+
+
+  /**
+   * Adds the block to the blockchain by calling the addBlock method.
+   *
+   * @param {Blockchain} blockchain - The blockchain instance to add the block to.
+   * @returns {Boolean} - True if the block was added successfully.
+   */
+  addToBlockchain(blockchain) {
+    if (!blockchain || !(blockchain instanceof Blockchain)) {
+      console.log('Invalid blockchain instance provided.');
+      return false;
+    }
+
+    return blockchain.addBlock(this);
+  }
+
+
+
 
   /**
    * Determines whether the block is the beginning of the chain.
@@ -77,9 +103,9 @@ module.exports = class Block {
    * @returns {Boolean} - True if the block has a valid proof.
    */
   hasValidProof() {
-    const rootHash = this.merkleTree.getRoot().toString('hex');
-    const blockHash = utils.hash(rootHash + this.prevBlockHash + this.proof);
-    return BigInt(`0x${blockHash}`) < this.target;
+    let h = utils.hash(this.serialize());
+    let n = BigInt(`0x${h}`);
+    return n < this.target;
   }
 
   /**
@@ -89,18 +115,7 @@ module.exports = class Block {
    * @returns {String} - The block in JSON format.
    */
   serialize() {
-    return JSON.stringify({
-        prevBlockHash: this.prevBlockHash,
-        merkleRoot: this.merkleTree.getRoot(),
-        target: this.target,
-        // Store only the root and not the individual transactions
-        chainLength: this.chainLength,
-        timestamp: this.timestamp,
-        rewardAddr: this.rewardAddr,
-        coinbaseReward: this.coinbaseReward
-    });
-}
-
+    return JSON.stringify(this);
    //if (this.isGenesisBlock()) {
    //  // The genesis block does not contain a proof or transactions,
    //  // but is the only block than can specify balances.
@@ -138,7 +153,7 @@ module.exports = class Block {
    //  return JSON.stringify(o, ['chainLength', 'timestamp', 'transactions',
    //       'prevBlockHash', 'proof', 'rewardAddr']);
    //}
-  
+  }
 
   toJSON() {
     let o = {
@@ -184,38 +199,20 @@ module.exports = class Block {
    *
    * @param {Transaction} tx - The transaction to add to the block.
    * @param {Client} [client] - A client object, for logging useful messages.
-   * @param {number} maxSizeBytes - Maximum allowed block size in bytes.
    *
    * @returns {Boolean} - True if the transaction was added successfully.
    */
-  addTransaction(tx, client, maxSizeBytes) {
+  addTransaction(tx, client) {
+    const txSize = Buffer.byteLength(JSON.stringify(tx));
     
-    /*
-    const serializedTx = JSON.stringify(tx);
-    const txSizeBytes = Buffer.byteLength(serializedTx, 'utf8');
-
-    // Check if adding this transaction would exceed the block size limit
-    if (this.getBlockSizeBytes() + txSizeBytes > maxSizeBytes) {
-      if (client) client.log(`Transaction ${tx.id} exceeds block size limit.`);
-      return false;
-    }
-    */
-
-    // Add transaction to block
-    const serializedTx = JSON.stringify(tx);
-    const txSizeBytes = Buffer.byteLength(serializedTx, 'utf8');
-
-    // Check if adding this transaction would exceed the block size limit
-    if (this.getBlockSizeBytes() + txSizeBytes > maxSizeBytes) {
+    console.log(`Checking current block size, ${this.currentBlockSize + txSize} compared to max block size, ${Blockchain.MAX_BLOCK_SIZE_BYTES}`);
+    if (this.currentBlockSize + txSize > Blockchain.MAX_BLOCK_SIZE_BYTES) {
       if (client) client.log(`Transaction ${tx.id} exceeds block size limit.`);
       return false;
     }
 
-    // Add transaction to block
-    this.transactions.push(tx);
-    this.merkleTree = new MerkleTree(this.transactions.map(tx => utils.hash(JSON.stringify(tx))));
-
-
+    // Updating block size
+    this.currentBlockSize += txSize;
 
     if (this.transactions.get(tx.id)) {
       if (client) client.log(`Duplicate transaction ${tx.id}.`);
@@ -230,6 +227,7 @@ module.exports = class Block {
       if (client) client.log(`Insufficient gold for transaction ${tx.id}.`);
       return false;
     }
+    
 
     // Checking and updating nonce value.
     // This portion prevents replay attacks.
@@ -257,6 +255,11 @@ module.exports = class Block {
       let oldBalance = this.balanceOf(address);
       this.balances.set(address, amount + oldBalance);
     });
+
+
+    this.updateBalances(tx);
+
+
 
     return true;
   }
@@ -333,21 +336,15 @@ module.exports = class Block {
     return this.transactions.has(tx.id);
   }
 
-  /**
-   * Calculate the current size of the block in bytes.
-   * This includes the serialized size of all transactions.
-   * 
-   * @returns {number} - Size of the block in bytes.
-   */
-  getBlockSizeBytes() {
-    const serializedBlock = JSON.stringify({
-      prevBlockHash: this.prevBlockHash,
-      timestamp: this.timestamp,
-      transactions: this.transactions.map(tx => JSON.stringify(tx)),
-      rewardAddr: this.rewardAddr,
-      coinbaseReward: this.coinbaseReward
-    });
+  updateBalances(tx) {
+    let senderBalance = this.balanceOf(tx.from);
+    this.balances.set(tx.from, senderBalance - tx.totalOutput());
 
-    return Buffer.byteLength(serializedBlock, 'utf8');
+    tx.outputs.forEach(({ amount, address }) => {
+        let oldBalance = this.balanceOf(address);
+        this.balances.set(address, amount + oldBalance);
+    });
   }
+
+
 };

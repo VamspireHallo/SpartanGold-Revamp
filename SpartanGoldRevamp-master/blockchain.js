@@ -1,8 +1,5 @@
 "use strict";
 
-const { MerkleTree } = require('./MerkleTree.js');
-const SHA256 = require('crypto-js/sha256'); 
-
 // Network message constants
 const MISSING_BLOCK = "MISSING_BLOCK";
 const POST_TRANSACTION = "POST_TRANSACTION";
@@ -25,8 +22,8 @@ const DEFAULT_TX_FEE = 1;
 // Note that the genesis block is always considered to be confirmed.
 const CONFIRMED_DEPTH = 6;
 
-const TARGET_BLOCK_TIME = 10 * 60 * 1000; // 10 minutes in milliseconds
-const DIFFICULTY_ADJUSTMENT_INTERVAL = 2016; // number of blocks
+// Implementing Fixed Block Sizes
+const MAX_BLOCK_SIZE_BYTES = 1024;
 
 /**
  * The Blockchain class tracks configuration information and settings for the
@@ -62,6 +59,9 @@ module.exports = class Blockchain {
     let bc = Blockchain.getInstance();
     return bc.confirmedDepth;
   }
+
+  // Exporting max block size
+  static get MAX_BLOCK_SIZE_BYTES() { return MAX_BLOCK_SIZE_BYTES; }
   
 
   /**
@@ -96,16 +96,32 @@ module.exports = class Blockchain {
    * @returns {Block}
    */
   static deserializeBlock(o) {
-    let block = new Block(data.rewardAddr, null, data.target, data.coinbaseReward);
-    block.transactions = data.transactions; 
-    block.rebuildMerkleTree(); 
-    return block;
-  }
+    if (o instanceof this.instance.blockClass) {
+      return o;
+    }
 
-  rebuildMerkleTree() {
-    // Map transactions 
-    const leaves = this.transactions.map(tx => SHA256(JSON.stringify(tx)));
-    this.merkleTree = new MerkleTree(leaves, SHA256);
+    let b = new this.instance.blockClass();
+    b.chainLength = parseInt(o.chainLength, 10);
+    b.timestamp = o.timestamp;
+
+    if (b.isGenesisBlock()) {
+      // Balances need to be recreated and restored in a map.
+      o.balances.forEach(([clientID,amount]) => {
+        b.balances.set(clientID, amount);
+      });
+    } else {
+      b.prevBlockHash = o.prevBlockHash;
+      b.proof = o.proof;
+      b.rewardAddr = o.rewardAddr;
+      // Likewise, transactions need to be recreated and restored in a map.
+      b.transactions = new Map();
+      if (o.transactions) o.transactions.forEach(([txID,txJson]) => {
+        let tx = this.makeTransaction(txJson);
+        b.transactions.set(txID, tx);
+      });
+    }
+
+    return b;
   }
 
   /**
@@ -171,34 +187,9 @@ module.exports = class Blockchain {
   static createInstance(cfg) {
     this.instance = new Blockchain(cfg);
     this.instance.genesis = this.makeGenesis();
-
-    this.targetBlockTime = cfg.targetBlockTime || TARGET_BLOCK_TIME;
-    this.difficultyAdjustmentInterval = cfg.difficultyAdjustmentInterval || DIFFICULTY_ADJUSTMENT_INTERVAL;
-
     return this.instance;
   }
 
-  adjustDifficulty() {
-    const lastAdjustmentBlock = this.chain.length - this.difficultyAdjustmentInterval;
-    if (this.chain.length % this.difficultyAdjustmentInterval === 0 && lastAdjustmentBlock >= 0) {
-      let oldTimestamp = this.chain[lastAdjustmentBlock].timestamp;
-      let newTimestamp = this.chain[this.chain.length - 1].timestamp;
-      let timeTaken = newTimestamp - oldTimestamp;
-      let expectedTime = this.targetBlockTime * this.difficultyAdjustmentInterval;
-
-      if (timeTaken < expectedTime / 2) {
-        this.powTarget = this.powTarget / 2n; // Increase difficulty
-      } else if (timeTaken > expectedTime * 2) {
-        this.powTarget = this.powTarget * 2n; // Decrease difficulty
-      }
-    }
-  }
-
-  addBlock(newBlock) {
-    // Check the validity, add the block, etc.
-    this.chain.push(newBlock);
-    this.adjustDifficulty(); // Adjust difficulty
-  }
 
   /**
    * Constructor for the Blockchain configuration.  This constructor should not
@@ -301,7 +292,76 @@ module.exports = class Blockchain {
       this.initialBalances.set(client.address, clientCfg.amount);
     });
 
+
+    this.difficultyAdjustmentInterval = 10; // Adjust difficulty every 10 blocks
+    this.targetBlockTime = 300; // Target block time in seconds (e.g., 5 minutes)
+    this.POW_TARGET = POW_BASE_TARGET;
+    this.blockTimes = [];
+
   }
+
+
+
+
+
+
+
+
+  addBlock(block) {
+    this.blockTimes.push(block.timestamp);
+    this.adjustDifficulty();
+  }
+
+  // Calculate average block time over the adjustment interval
+  calculateBlockProductionRate() {
+    if (this.blockTimes.length < this.difficultyAdjustmentInterval) {
+      return this.targetBlockTime; // Use target block time if insufficient data
+    }
+
+    const recentBlockTimes = this.blockTimes.slice(-this.difficultyAdjustmentInterval);
+    const totalTime = recentBlockTimes[this.difficultyAdjustmentInterval - 1] - recentBlockTimes[0];
+    return totalTime / this.difficultyAdjustmentInterval;
+  }
+
+  // Adjust mining difficulty based on block production rate
+  adjustDifficulty() {
+    console.log(`Adjusting Difficulty...`);
+
+    const averageBlockTime = this.calculateBlockProductionRate();
+    const adjustmentFactor = averageBlockTime / this.targetBlockTime;
+
+    console.log(`Adjustment Factor of ${adjustmentFactor}`);
+    // Determine if difficulty should be adjusted
+    if (adjustmentFactor < 0.5) {
+      console.log(`Increasing Difficulty...`);
+      this.increaseDifficulty(); // Difficulty too low: increase target
+    } else if (adjustmentFactor > 2) {
+      console.log(`Decreasing Difficulty...`);
+      this.decreaseDifficulty(); // Difficulty too high: decrease target
+    }
+    console.log(`No Adjustment Needed For Now`);
+  }
+
+  // Increase mining difficulty (make target smaller)
+  increaseDifficulty() {
+    this.POW_TARGET = this.POW_TARGET / 2n; // Example: halve the target
+    console.log(`Mining difficulty increased. New TARGET: ${this.POW_TARGET}`);
+  }
+
+  // Decrease mining difficulty (make target larger)
+  decreaseDifficulty() {
+    this.POW_TARGET = this.POW_TARGET * 2n; // Example: double the target
+    console.log(`Mining difficulty decreased. New TARGET: ${this.POW_TARGET}`);
+  }
+
+
+
+
+
+
+
+
+
 
   /**
    * Prints out the balances from one client's view of the blockchain.  A

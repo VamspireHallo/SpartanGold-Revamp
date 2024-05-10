@@ -29,6 +29,14 @@ let [alice, bob] = bc.getClients('Alice', 'Bob');
 console.log("Initial balances:");
 alice.showAllBalances();
 
+const transacting = [
+  { sender: alice.address, recipient: bob.address, amount: 4000 }
+];
+const newBlock = bc.makeBlock(transacting);
+console.log("Adding new block to blockchain");
+bc.addBlock(newBlock);
+
+
 // The miners will start mining blocks when start is called.  After 8 seconds,
 // the code will terminate and show the final balances from Alice's perspective.
 bc.start(8000, () => {
@@ -39,6 +47,7 @@ bc.start(8000, () => {
 // Alice transfers some money to Bob.
 console.log(`Alice is transferring 40 gold to ${bob.address}`);
 alice.postTransaction([{ amount: 40, address: bob.address }]);
+
 
 setTimeout(() => {
   // Late miner - Donald has more mining power, represented by the miningRounds.
