@@ -3,6 +3,7 @@
 const Blockchain = require('./blockchain.js');
 
 const utils = require('./utils.js');
+const { MerkleTree } = require('./MerkleTree.js');
 
 /**
  * A block is a collection of transactions, with a hash connecting it
@@ -37,7 +38,8 @@ module.exports = class Block {
     }
 
     // Storing transactions in a Map to preserve key order.
-    this.transactions = new Map();
+    this.transactions = [];
+    this.merkleTree = new MerkleTree(this.transactions); 
 
     // Adding toJSON methods for transactions and balances, which help with
     // serialization.
@@ -214,10 +216,10 @@ module.exports = class Block {
     // Updating block size
     this.currentBlockSize += txSize;
 
-    if (this.transactions.get(tx.id)) {
+    if (this.transactions.some(t => t.id === tx.id)) {
       if (client) client.log(`Duplicate transaction ${tx.id}.`);
       return false;
-    } else if (tx.sig === undefined) {
+    }else if (tx.sig === undefined) {
       if (client) client.log(`Unsigned transaction ${tx.id}.`);
       return false;
     } else if (!tx.validSignature()) {
@@ -243,8 +245,9 @@ module.exports = class Block {
       this.nextNonce.set(tx.from, nonce + 1);
     }
 
-    // Adding the transaction to the block
-    this.transactions.set(tx.id, tx);
+    this.transactions.push(tx);
+    this.nextNonce.set(tx.from, nonce + 1);
+
 
     // Taking gold from the sender
     let senderBalance = this.balanceOf(tx.from);
@@ -257,8 +260,9 @@ module.exports = class Block {
     });
 
 
+    const leaves = this.transactions;
+    this.merkleTree = new MerkleTree(leaves); 
     this.updateBalances(tx);
-
 
 
     return true;
@@ -284,12 +288,12 @@ module.exports = class Block {
     let winnerBalance = this.balanceOf(prevBlock.rewardAddr);
     if (prevBlock.rewardAddr) this.balances.set(prevBlock.rewardAddr, winnerBalance + prevBlock.totalRewards());
 
-    // Re-adding all transactions.
-    let txs = this.transactions;
-    this.transactions = new Map();
-    for (let tx of txs.values()) {
-      let success = this.addTransaction(tx);
-      if (!success) return false;
+    this.transactions = [];
+    let txs = prevBlock.merkleTree.transactions;
+    for (let tx of txs) {
+      if (!this.addTransaction(tx)) {
+        return false;
+      }
     }
 
     return true;
@@ -318,9 +322,8 @@ module.exports = class Block {
    *
    */
   totalRewards() {
-    return [...this.transactions].reduce(
-      (reward, [, tx]) => reward + tx.fee,
-      this.coinbaseReward);
+    const transactions = this.merkleTree.getTransactions();  // Retrieve transactions from the Merkle Tree
+    return transactions.reduce((reward, tx) => reward + tx.fee, this.coinbaseReward);
   }
 
   /**
@@ -348,3 +351,4 @@ module.exports = class Block {
 
 
 };
+
