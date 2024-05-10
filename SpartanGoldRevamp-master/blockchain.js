@@ -1,4 +1,8 @@
+
 "use strict";
+
+const { MerkleTree } = require('./MerkleTree.js');
+const { Block } = require('./block.js');
 
 // Network message constants
 const MISSING_BLOCK = "MISSING_BLOCK";
@@ -113,15 +117,23 @@ module.exports = class Blockchain {
       b.prevBlockHash = o.prevBlockHash;
       b.proof = o.proof;
       b.rewardAddr = o.rewardAddr;
-      // Likewise, transactions need to be recreated and restored in a map.
-      b.transactions = new Map();
-      if (o.transactions) o.transactions.forEach(([txID,txJson]) => {
-        let tx = this.makeTransaction(txJson);
-        b.transactions.set(txID, tx);
-      });
+
+      b.transactions = [];
+      if (o.merkleTree.getTransactions()) {
+        // Assuming o.transactions is an array of transaction objects.
+        // This requires that transactions have been serialized in a format that can be directly instantiated.
+        let transactions = o.merkleTree.getTransactions().map(txJson => this.makeTransaction(txJson));
+        b.merkleTree = new MerkleTree(transactions);
+      } else {
+        b.merkleTree = new MerkleTree([]);  // Initialize with an empty tree if no transactions
+      }
     }
 
     return b;
+  }
+
+  rebuildMerkleTree() {
+    this.merkleTree = new MerkleTree(this.transactions); 
   }
 
   /**
