@@ -37,46 +37,63 @@ class MerkleTree {
         return this.transactions;  // assuming this.transactions is an array of transaction objects
     }
 
+    
     constructor(transactions) {
         // Actual transactions
         this.transactions = [];
+        this.levels = [];
 
         // Transaction hashes
         this.hashes = [];
 
         // hash-to-index Lookup table
-        this.lookup = {};
+       // this.lookup = {};
+        this.rootHash = null;
+        this.createNewTree(transactions);
+    }
 
-        if (transactions.length === 0) {
-            this.rootHash = ""; // Or some other default value indicating an empty tree
+    createNewTree(transactions){
+        if (!transactions || transactions.length === 0) {
+            this.levels.push([]);
+            this.rootHash = null;
+            this.transactions = [];
             return; // Exit the constructor early
         }
 
-        // We want to maintain a balanced tree, so we may need to pad
-        // out the last few elements.
-        let numBalancedTree = this.constructor.calculateSize(transactions.length);
-
-        // Hashes of transactions start in the middle of the array.
-        let firstTrans = Math.floor(numBalancedTree / 2);
-
-        for (let i=firstTrans; i<numBalancedTree; i++) {
-            let tNum = i - firstTrans;
-
-            // If we have less than a power of 2 elements,
-            // we pad out the transactions and arrays with the last element
-            let v = tNum<transactions.length ? transactions[tNum].toString() : this.transactions[tNum-1];
-            let h = utils.hash(v);
-
-            this.transactions[tNum] = v;
-            this.hashes[i] = h;
-            this.lookup[h] = i;
+        let leaves = [];
+        if (this.levels[0] && this.levels[0].length !== 0) {
+            leaves = this.levels[0];
+        } else {
+            leaves = transactions.map(transaction => utils.hash(JSON.stringify(transaction)));
         }
 
-        // Completing inner nodes of Merkle tree
-        for (let i=firstTrans+1; i<this.hashes.length; i+=2) {
-            this.constructor.hashToRoot(this.hashes, i);
+        this.levels = [];
+        this.levels.push(leaves);
+        while (leaves.length > 1) {
+            let level = [];
+            for (let i = 0; i < leaves.length; i += 2) {
+                let combinedHash = leaves[i];
+                if (i + 1 < leaves.length) {
+                    combinedHash += leaves[i + 1];
+                }
+                level.push(utils.hash(combinedHash));
+            }
+            this.levels.push(level);
+            leaves = level;
         }
+        this.rootHash = leaves[0];
     }
+    
+
+
+
+    hasTx(tx) {
+        if (!this.transactions) {
+          return false; // Merkle tree not initialized, transaction not present
+        }
+        return this.transactions.includes(tx) ;
+    }
+
 
     // Returns the Merkle root
     getroot() {
@@ -109,6 +126,18 @@ class MerkleTree {
         // verify the path.
     }
 
+    addtxn(thisTransaction) {
+        let currHash = utils.hash(JSON.stringify(thisTransaction)); //leaf's hash
+        if (this.levels.length === 0) {
+            this.levels.push([currHash]);
+            this.rootHash = currHash;
+            return;
+        } //if not root node
+        this.levels[0].push(currHash)
+        this.buildTree(this.levels[0]);
+        this.transactions.push(thisTransaction);
+    }
+
     // Return true if the tx matches the path.
     verify(tx, path) {
         let i = path.txInd;
@@ -136,6 +165,13 @@ class MerkleTree {
         // starting at i, hash the appropriate nodes and verify that their hashes
         // match their parent nodes, until finally hitting the Merkle root.
         // If the Merkle root matches the path, return true.
+    }
+
+    hasTransaction(thisTx){
+        if(this.transactions){
+            return this.transactions.includes(thisTx);
+        }
+        return false;
     }
 
     // Returns a boolean indicating whether this node is part
@@ -166,6 +202,13 @@ class MerkleTree {
             i++;
         }
     }
+
+
+    getRootHash() {
+        let allHashes = this.levels[this.levels.length - 1];
+        return allHashes[0];
+    }
+
 }
 
 
