@@ -1,4 +1,3 @@
-
 "use strict";
 
 const { MerkleTree } = require('./MerkleTree.js');
@@ -118,14 +117,15 @@ module.exports = class Blockchain {
       b.proof = o.proof;
       b.rewardAddr = o.rewardAddr;
 
-      b.transactions = [];
-      if (o.merkleTree.getTransactions()) {
+      b.transactions = new MerkleTree();
+      if (o.transactions) {
         // Assuming o.transactions is an array of transaction objects.
         // This requires that transactions have been serialized in a format that can be directly instantiated.
-        let transactions = o.merkleTree.getTransactions().map(txJson => this.makeTransaction(txJson));
-        b.merkleTree = new MerkleTree(transactions);
-      } else {
-        b.merkleTree = new MerkleTree([]);  // Initialize with an empty tree if no transactions
+        o.transactions.forEach(tx => {
+          let newTransaction = this.makeTransaction(tx);
+          
+          b.transactions.insert(newTransaction);
+        });
       }
     }
 
@@ -470,3 +470,4 @@ module.exports = class Blockchain {
     return client.name;
   }
 };
+
