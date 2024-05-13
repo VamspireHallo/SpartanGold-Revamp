@@ -38,8 +38,7 @@ module.exports = class Block {
     }
 
     // Storing transactions in a Map to preserve key order.
-    this.transactions = [];
-    this.merkleTree = new MerkleTree(this.transactions); 
+    this.transactions = new MerkleTree([]);
 
     // Adding toJSON methods for transactions and balances, which help with
     // serialization.
@@ -167,8 +166,7 @@ module.exports = class Block {
       // but is the only block than can specify balances.
       o.balances = Array.from(this.balances.entries());
     } else {
-      // Other blocks must specify transactions and proof details.
-      o.transactions = Array.from(this.transactions.entries());
+      o.transactions = this.transactions;
       o.prevBlockHash = this.prevBlockHash;
       o.proof = this.proof;
       o.rewardAddr = this.rewardAddr;
@@ -205,21 +203,31 @@ module.exports = class Block {
    * @returns {Boolean} - True if the transaction was added successfully.
    */
   addTransaction(tx, client) {
+
     const txSize = Buffer.byteLength(JSON.stringify(tx));
     
+    if(this.transactions.hasTx(tx)){
+      if(client){
+        client.log("Duplicate transaction found");
+        return false;
+      }
+    }
+
     console.log(`Checking current block size, ${this.currentBlockSize + txSize} compared to max block size, ${Blockchain.MAX_BLOCK_SIZE_BYTES}`);
     if (this.currentBlockSize + txSize > Blockchain.MAX_BLOCK_SIZE_BYTES) {
-      if (client) client.log(`Transaction ${tx.id} exceeds block size limit.`);
+      if (client) 
+        client.log(`Transaction ${tx.id} exceeds block size limit.`);
       return false;
     }
 
     // Updating block size
     this.currentBlockSize += txSize;
 
-    if (this.transactions.some(t => t.id === tx.id)) {
-      if (client) client.log(`Duplicate transaction ${tx.id}.`);
+    if(tx.sig === undefined){
+      if (client) client.log(`Signature undefined ${tx.id}.`);
       return false;
-    }else if (tx.sig === undefined) {
+    }
+    else if (tx.sig === undefined) {
       if (client) client.log(`Unsigned transaction ${tx.id}.`);
       return false;
     } else if (!tx.validSignature()) {
@@ -231,42 +239,33 @@ module.exports = class Block {
     }
     
 
-    // Checking and updating nonce value.
-    // This portion prevents replay attacks.
+
+  
     let nonce = this.nextNonce.get(tx.from) || 0;
     if (tx.nonce < nonce) {
       if (client) client.log(`Replayed transaction ${tx.id}.`);
       return false;
     } else if (tx.nonce > nonce) {
-      // FIXME: Need to do something to handle this case more gracefully.
       if (client) client.log(`Out of order transaction ${tx.id}.`);
       return false;
     } else {
       this.nextNonce.set(tx.from, nonce + 1);
     }
 
-    this.transactions.push(tx);
-    this.nextNonce.set(tx.from, nonce + 1);
+    this.transactions.addTxn(tx);
+
+    updateBalances(tx);
 
 
-    // Taking gold from the sender
-    let senderBalance = this.balanceOf(tx.from);
-    this.balances.set(tx.from, senderBalance - tx.totalOutput());
-
-    // Giving gold to the specified output addresses
-    tx.outputs.forEach(({amount, address}) => {
-      let oldBalance = this.balanceOf(address);
-      this.balances.set(address, amount + oldBalance);
-    });
-
-
+/*
     const leaves = this.transactions;
     this.merkleTree = new MerkleTree(leaves); 
     this.updateBalances(tx);
-
-
+*/
     return true;
   }
+
+
 
   /**
    * When a block is received from another party, it does not include balances or a record of
@@ -288,13 +287,13 @@ module.exports = class Block {
     let winnerBalance = this.balanceOf(prevBlock.rewardAddr);
     if (prevBlock.rewardAddr) this.balances.set(prevBlock.rewardAddr, winnerBalance + prevBlock.totalRewards());
 
-    this.transactions = [];
-    let txs = prevBlock.merkleTree.transactions;
+    let txns = this.transactions.getTxns();
+    this.transactions = new MerkleTree();
     for (let tx of txs) {
-      if (!this.addTransaction(tx)) {
-        return false;
-      }
+      let success = this.addTransaction(tx);
+      if (!success) return false; 
     }
+    
 
     return true;
   }
@@ -322,8 +321,13 @@ module.exports = class Block {
    *
    */
   totalRewards() {
-    const transactions = this.merkleTree.getTransactions();  // Retrieve transactions from the Merkle Tree
-    return transactions.reduce((reward, tx) => reward + tx.fee, this.coinbaseReward);
+    let totalFee = 0;
+    const transactions = this.transactions.getTransactions(); 
+    for(const tx of transactions){
+      totalFee += tx.fee;
+    }
+    return this.coinbaseReward+ totalFee;
+   // return transactions.reduce((reward, tx) => reward + tx.fee, this.coinbaseReward);
   }
 
   /**
@@ -336,8 +340,12 @@ module.exports = class Block {
    * @returns {boolean} - True if the transaction is contained in this block.
    */
   contains(tx) {
-    return this.transactions.has(tx.id);
+    if(!this.transactions){
+      return false;
+    }
+    return this.transactions.hasTransaction(tx) !== null;
   }
+
 
   updateBalances(tx) {
     let senderBalance = this.balanceOf(tx.from);
