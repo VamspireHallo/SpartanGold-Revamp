@@ -1,6 +1,8 @@
 "use strict";
 
 let Blockchain = require('./blockchain.js');
+const { MerkleTree } = require('./MerkleTree.js');
+
 let Client = require('./client.js');
 
 /**
@@ -120,7 +122,6 @@ module.exports = class Miner extends Client {
       let txSet = this.syncTransactions(b);
       this.startNewSearch(txSet);
     }
-
     return b;
   }
 
@@ -143,21 +144,26 @@ module.exports = class Miner extends Client {
     // The new block may be ahead of the old block.  We roll back the new chain
     // to the matching height, collecting any transactions.
     while (nb.chainLength > cb.chainLength) {
-      nb.transactions.forEach((tx) => nbTxs.add(tx));
-      nb = this.blocks.get(nb.prevBlockHash);
+      const previousBlock = this.blocks.get(nb.prevBlockHash);
+        if (!previousBlock) break; 
+        previousBlock.transactions.getAllTransactions().forEach((tx) => nbTxs.add(tx));
+        nb = previousBlock;
     }
 
     // Step back in sync until we hit the common ancestor.
     while (cb && cb.id !== nb.id) {
-      // Store any transactions in the two chains.
-      cb.transactions.forEach((tx) => cbTxs.add(tx));
-      nb.transactions.forEach((tx) => nbTxs.add(tx));
+      if(cb.transactions){
+        cb.transactions.getTransactions().forEach((tx) => cbTxs.add(tx));
+      }
+      if(nb.transactions){
+        nb.transactions.getAllTransactions().forEach((tx) => nbTxs.add(tx));
+      }
 
       cb = this.blocks.get(cb.prevBlockHash);
       nb = this.blocks.get(nb.prevBlockHash);
+
     }
 
-    // Remove all transactions that the new chain already has.
     nbTxs.forEach((tx) => cbTxs.delete(tx));
 
     return cbTxs;
