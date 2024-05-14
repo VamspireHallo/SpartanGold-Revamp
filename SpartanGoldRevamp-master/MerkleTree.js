@@ -37,7 +37,7 @@ class MerkleTree {
         return this.transactions;  // assuming this.transactions is an array of transaction objects
     }
 
-    
+
     constructor(transactions) {
         // Actual transactions
         this.transactions = [];
@@ -57,7 +57,7 @@ class MerkleTree {
             this.levels.push([]);
             this.rootHash = null;
             this.transactions = [];
-            return; // Exit the constructor early
+            return; 
         }
 
         let leaves = [];
@@ -72,11 +72,11 @@ class MerkleTree {
         while (leaves.length > 1) {
             let level = [];
             for (let i = 0; i < leaves.length; i += 2) {
-                let combinedHash = leaves[i];
+                let parentH = leaves[i];
                 if (i + 1 < leaves.length) {
-                    combinedHash += leaves[i + 1];
+                    parentH += leaves[i + 1];
                 }
-                level.push(utils.hash(combinedHash));
+                level.push(utils.hash(parentH));
             }
             this.levels.push(level);
             leaves = level;
@@ -87,12 +87,8 @@ class MerkleTree {
 
 
 
-    hasTx(tx) {
-        if (!this.transactions) {
-          return false; // Merkle tree not initialized, transaction not present
-        }
-        return this.transactions.includes(tx) ;
-    }
+
+    
 
 
     // Returns the Merkle root
@@ -127,14 +123,15 @@ class MerkleTree {
     }
 
     addtxn(thisTransaction) {
-        let currHash = utils.hash(JSON.stringify(thisTransaction)); //leaf's hash
+        let leafHash = utils.hash(JSON.stringify(thisTransaction));
         if (this.levels.length === 0) {
-            this.levels.push([currHash]);
-            this.rootHash = currHash;
+            this.levels.push([leafHash]);
+            this.rootHash = leafHash;
             return;
-        } //if not root node
-        this.levels[0].push(currHash)
-        this.buildTree(this.levels[0]);
+        }
+        this.levels[0].push(leafHash)
+
+        this.createNewTree(this.levels[0]);
         this.transactions.push(thisTransaction);
     }
 
@@ -145,7 +142,7 @@ class MerkleTree {
         let tempChildHash;
 
         for(let thisNode in path.nodes){
-            if(i %2 === 0){ //node in path is right child
+            if(i %2 === 0){ 
                 tempChildHash = utils.hash(thisNode.sibling + this.hashes[i]);
             }
             else{ //node in path is left child
@@ -192,7 +189,6 @@ class MerkleTree {
         console.log();
 
         while (i < this.hashes.length) {
-            // Truncating hashes for the sake of readability
             s += this.hashes[i].slice(0,6) + " ";
             if (i === nextRow) {
                 console.log(s);
