@@ -1,8 +1,6 @@
 "use strict";
 
 let Blockchain = require('./blockchain.js');
-const { MerkleTree } = require('./MerkleTree.js');
-
 let Client = require('./client.js');
 
 /**
@@ -84,7 +82,7 @@ module.exports = class Miner extends Client {
       if (this.currentBlock.hasValidProof()) {
         this.log(`found proof for block ${this.currentBlock.chainLength}: ${this.currentBlock.proof}`);
         this.announceProof();
-        // Note: calling receiveBlock triggers a new search.
+
         this.receiveBlock(this.currentBlock);
         break;
       }
@@ -122,6 +120,7 @@ module.exports = class Miner extends Client {
       let txSet = this.syncTransactions(b);
       this.startNewSearch(txSet);
     }
+
     return b;
   }
 
@@ -138,35 +137,31 @@ module.exports = class Miner extends Client {
    */
   syncTransactions(nb) {
     let cb = this.currentBlock;
-    let cbTxs = new Set();
-    let nbTxs = new Set();
+    let cbTtransactions = new Set();
+    let nbTtransactions = new Set();
 
-    // The new block may be ahead of the old block.  We roll back the new chain
-    // to the matching height, collecting any transactions.
     while (nb.chainLength > cb.chainLength) {
-      const previousBlock = this.blocks.get(nb.prevBlockHash);
-        if (!previousBlock) break; 
-        previousBlock.transactions.getAllTransactions().forEach((tx) => nbTxs.add(tx));
-        nb = previousBlock;
-    }
+      const prevBlock = this.blocks.get(nb.prevBlockHash);
+      if (!prevBlock) break; 
+      prevBlock.transactions.getTransactions().forEach((tx) => nbTtransactions.add(tx));
+      nb = prevBlock;
+  }
 
-    // Step back in sync until we hit the common ancestor.
-    while (cb && cb.id !== nb.id) {
-      if(cb.transactions){
-        cb.transactions.getTransactions().forEach((tx) => cbTxs.add(tx));
+  while (cb && cb.id !== nb.id) {
+      if (cb.transactions) {
+          cb.transactions.getTransactions().forEach((tx) => cbTtransactions.add(tx));
       }
-      if(nb.transactions){
-        nb.transactions.getAllTransactions().forEach((tx) => nbTxs.add(tx));
+      if (nb.transactions) {
+          nb.transactions.getTransactions().forEach((tx) => nbTtransactions.add(tx));
       }
 
       cb = this.blocks.get(cb.prevBlockHash);
       nb = this.blocks.get(nb.prevBlockHash);
+  }
 
-    }
+  nbTtransactions.forEach((tx) => cbTtransactions.delete(tx));
 
-    nbTxs.forEach((tx) => cbTxs.delete(tx));
-
-    return cbTxs;
+  return cbTtransactions;
   }
 
   /**
