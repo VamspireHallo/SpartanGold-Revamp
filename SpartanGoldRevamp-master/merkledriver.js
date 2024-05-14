@@ -29,6 +29,7 @@ let [alice, bob] = bc.getClients('Alice', 'Bob');
 console.log("Initial balances:");
 alice.showAllBalances();
 
+// Demonstrating Proof-of-Work recalculation
 const transacting = [
   { sender: alice.address, recipient: bob.address, amount: 4000 }
 ];
@@ -47,7 +48,6 @@ bc.start(8000, () => {
 // Alice transfers some money to Bob.
 console.log(`Alice is transferring 40 gold to ${bob.address}`);
 alice.postTransaction([{ amount: 40, address: bob.address }]);
-
 
 setTimeout(() => {
   // Late miner - Donald has more mining power, represented by the miningRounds.
