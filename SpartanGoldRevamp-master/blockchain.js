@@ -1,7 +1,6 @@
 "use strict";
-
 const { MerkleTree } = require('./MerkleTree.js');
-const { Block } = require('./block.js');
+
 
 // Network message constants
 const MISSING_BLOCK = "MISSING_BLOCK";
@@ -62,10 +61,9 @@ module.exports = class Blockchain {
     let bc = Blockchain.getInstance();
     return bc.confirmedDepth;
   }
-
+  
   // Exporting max block size
   static get MAX_BLOCK_SIZE_BYTES() { return MAX_BLOCK_SIZE_BYTES; }
-  
 
   /**
    * Produces a new genesis block, giving the specified clients the amount of
@@ -103,37 +101,38 @@ module.exports = class Blockchain {
       return o;
     }
 
-    let b = new this.instance.blockClass();
-    b.chainLength = parseInt(o.chainLength, 10);
-    b.timestamp = o.timestamp;
+    let block = new this.instance.blockClass();
+    block.chainLength = parseInt(o.chainLength, 10);
+    block.timestamp = o.timestamp;
 
-    if (b.isGenesisBlock()) {
-      // Balances need to be recreated and restored in a map.
+    //if its the first block ever
+    if (block.isGenesisBlock()) {
       o.balances.forEach(([clientID,amount]) => {
         b.balances.set(clientID, amount);
       });
     } else {
-      b.prevBlockHash = o.prevBlockHash;
-      b.proof = o.proof;
-      b.rewardAddr = o.rewardAddr;
+      block.prevBlockHash = o.prevBlockHash;
+      block.proof = o.proof;
+      block.rewardAddr = o.rewardAddr;
 
-      b.transactions = new MerkleTree();
+      block.transactions = new MerkleTree();
       if (o.transactions) {
-        // Assuming o.transactions is an array of transaction objects.
-        // This requires that transactions have been serialized in a format that can be directly instantiated.
-        o.transactions.forEach(tx => {
+        o.transactions.transactions.forEach(tx => {
           let newTransaction = this.makeTransaction(tx);
           
-          b.transactions.insert(newTransaction);
+          block.transactions.addtxn(newTransaction);
         });
       }
     }
 
-    return b;
+    return block;
   }
 
+  //dont use
   rebuildMerkleTree() {
-    this.merkleTree = new MerkleTree(this.transactions); 
+    // Map transactions 
+    const leaves = this.transactions.map(tx => SHA256(JSON.stringify(tx)));
+    this.merkleTree = new MerkleTree(leaves, SHA256);
   }
 
   /**
@@ -199,10 +198,12 @@ module.exports = class Blockchain {
   static createInstance(cfg) {
     this.instance = new Blockchain(cfg);
     this.instance.genesis = this.makeGenesis();
+
     return this.instance;
   }
 
 
+  
   /**
    * Constructor for the Blockchain configuration.  This constructor should not
    * be called outside of the class; nor should it be called more than once.
@@ -304,19 +305,12 @@ module.exports = class Blockchain {
       this.initialBalances.set(client.address, clientCfg.amount);
     });
 
-
     this.difficultyAdjustmentInterval = 10; // Adjust difficulty every 10 blocks
     this.targetBlockTime = 300; // Target block time in seconds (e.g., 5 minutes)
     this.POW_TARGET = POW_BASE_TARGET;
     this.blockTimes = [];
 
   }
-
-
-
-
-
-
 
 
   addBlock(block) {
@@ -365,13 +359,6 @@ module.exports = class Blockchain {
     this.POW_TARGET = this.POW_TARGET * 2n; // Example: double the target
     console.log(`Mining difficulty decreased. New TARGET: ${this.POW_TARGET}`);
   }
-
-
-
-
-
-
-
 
 
 
